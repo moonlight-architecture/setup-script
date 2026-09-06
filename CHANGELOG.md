@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Homebrew formula uses the SHA-256 of the v0.0.3 tarball. `sha256 :no_check` is rejected by current Homebrew.
+
 ## v0.0.3 — 2026-09-07
 
 - Windows support (Git Bash, WSL, and `moonlight.cmd` for Command Prompt / PowerShell)

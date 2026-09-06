@@ -11,7 +11,7 @@ class MoonlightCli < Formula
   desc "CLI to create and run Moonlight Spring Boot apps"
   homepage "https://github.com/moonlight-architecture/setup-script"
   url "https://github.com/moonlight-architecture/setup-script/archive/refs/tags/v0.0.3.tar.gz"
-  sha256 :no_check
+  sha256 "b2820c428fe53ad654b9a53fac5048160f2c2157577010f0c30e6bcd613082a8"
   license "MIT"
   version "0.0.3"
   head "https://github.com/moonlight-architecture/setup-script.git", branch: "main"
