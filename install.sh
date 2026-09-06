@@ -3,12 +3,12 @@ set -Eeuo pipefail
 
 #######################################
 # Moonlight CLI Installer (Smart Check)
-# Service Cops Tooling
+# moonlight-architecture/setup-script
 #######################################
 
 MOONLIGHT_HOME="$HOME/.moonlight"
 MOONLIGHT_SCRIPT="$MOONLIGHT_HOME/moonlight.sh"
-RAW_URL="https://raw.githubusercontent.com/jet2018/moonlight-scripts/main/moonlight.sh"
+RAW_URL="https://raw.githubusercontent.com/moonlight-architecture/setup-script/main/moonlight.sh"
 LOCAL_BIN="$HOME/.local/bin"
 
 RESET='\033[0m'
@@ -34,7 +34,7 @@ detect_profile() {
 
 main() {
   clear
-  echo -e "${BOLD}Service Cops Moonlight Installer${RESET}"
+  echo -e "${BOLD}Moonlight CLI Installer${RESET}"
   echo "------------------------------------------------"
 
   # 1. Check if Moonlight is already installed

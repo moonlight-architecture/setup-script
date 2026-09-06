@@ -3,12 +3,12 @@ set -Eeuo pipefail
 
 #######################################
 # Moonlight CLI v0.0.1
-# Service Cops Tooling
+# moonlight-architecture/setup-script
 #######################################
 
 VERSION="0.0.1"
-TEMPLATE_URL="https://bitbucket.org/servicecops/j2j_spring_boot_starter_kit.git"
-RAW_SCRIPT_URL="https://raw.githubusercontent.com/jet2018/moonlight-scripts/main/moonlight.sh"
+TEMPLATE_URL="https://github.com/moonlight-architecture/java-starter-kit.git"
+RAW_SCRIPT_URL="https://raw.githubusercontent.com/moonlight-architecture/setup-script/main/moonlight.sh"
 BASE_GROUP_PATH="com/servicecops"
 MOONLIGHT_HOME="$HOME/.moonlight"
 
@@ -66,7 +66,7 @@ detect_profile() {
 
 cmd_help() {
   echo -e "${BOLD}🌕 Moonlight CLI v$VERSION${RESET}"
-  echo -e "Service Cops Spring Boot Project Toolkit"
+  echo -e "Moonlight Spring Boot project toolkit"
   echo -e ""
   echo -e "${BOLD}Usage:${RESET}"
   echo -e "  moonlight <command> [options]"
@@ -139,7 +139,7 @@ cmd_new() {
 
   log "Cloning template..."
   git clone --depth 1 --branch "$TARGET_TAG" "$TEMPLATE_URL" "$APP_NAME" \
-    || die "Clone failed. Verify Bitbucket access."
+    || die "Clone failed. Verify GitHub access to moonlight-architecture/java-starter-kit."
 
   cd "$APP_NAME"
 
