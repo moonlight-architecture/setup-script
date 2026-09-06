@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 #######################################
-# Moonlight CLI Installer (Smart Check)
+# Moonlight CLI Installer
+# Prefers Homebrew; falls back to ~/.local/bin
 # moonlight-architecture/setup-script
 #######################################
 
@@ -10,6 +11,9 @@ MOONLIGHT_HOME="$HOME/.moonlight"
 MOONLIGHT_SCRIPT="$MOONLIGHT_HOME/moonlight.sh"
 RAW_URL="https://raw.githubusercontent.com/moonlight-architecture/setup-script/main/moonlight.sh"
 LOCAL_BIN="$HOME/.local/bin"
+TAP="moonlight-architecture/moonlight"
+TAP_URL="https://github.com/moonlight-architecture/setup-script"
+FORMULA="moonlight-architecture/moonlight/moonlight-cli"
 
 RESET='\033[0m'
 BOLD='\033[1m'
@@ -32,51 +36,88 @@ detect_profile() {
   [[ "${SHELL:-}" == *zsh* ]] && echo "$HOME/.zshrc" || echo "$HOME/.bashrc"
 }
 
-main() {
-  clear
-  echo -e "${BOLD}Moonlight CLI Installer${RESET}"
-  echo "------------------------------------------------"
+brew_has_moonlight() {
+  command -v brew >/dev/null 2>&1 || return 1
+  brew list --formula moonlight-cli >/dev/null 2>&1 \
+    || brew list --formula "$FORMULA" >/dev/null 2>&1
+}
 
-  # 1. Check if Moonlight is already installed
-  if command -v moonlight >/dev/null 2>&1; then
-    log "Moonlight is already installed!"
-    log "Running 'moonlight update' for you instead..."
-    echo "------------------------------------------------"
-    moonlight update
-    exit 0
-  fi
+install_via_brew() {
+  log "Installing via Homebrew..."
+  brew tap "$TAP" "$TAP_URL"
+  brew trust --formula "$FORMULA" || true
+  brew install --formula "$FORMULA"
+  done_log "Installed $(command -v moonlight)"
+  moonlight setup || warn "Environment setup skipped. Run: moonlight setup"
+}
 
-  # 2. Proceed with Fresh Installation
+upgrade_via_brew() {
+  log "Moonlight CLI is already installed with Homebrew."
+  log "Upgrading..."
+  brew upgrade moonlight-cli \
+    || brew upgrade "$FORMULA" \
+    || warn "Already up to date (or upgrade failed)."
+  moonlight setup || true
+}
+
+install_via_curl() {
   check_dependencies
 
   mkdir -p "$MOONLIGHT_HOME"
-  local tmp_file=$(mktemp)
+  local tmp_file
+  tmp_file="$(mktemp)"
 
-  log "Installing fresh version..."
-  log "Downloading Moonlight CLI..."
+  log "Installing to $MOONLIGHT_SCRIPT..."
   curl -fSL# "$RAW_URL" -o "$tmp_file" || die "Download failed."
   chmod +x "$tmp_file"
   mv "$tmp_file" "$MOONLIGHT_SCRIPT"
 
-  # Setup Symlink
   mkdir -p "$LOCAL_BIN"
   rm -f "$LOCAL_BIN/moonlight"
   ln -s "$MOONLIGHT_SCRIPT" "$LOCAL_BIN/moonlight"
   done_log "Symlinked to $LOCAL_BIN/moonlight"
 
-  # Ensure PATH
-  local profile=$(detect_profile)
+  local profile
+  profile="$(detect_profile)"
   touch "$profile"
   if ! grep -q "export PATH=.*$LOCAL_BIN" "$profile"; then
     log "Adding $LOCAL_BIN to PATH in $profile"
     echo -e "\n# Moonlight CLI\nexport PATH=\"$LOCAL_BIN:\$PATH\"" >> "$profile"
   fi
 
-  done_log "Installation complete! 🚀"
-  log "Restarting shell to activate..."
+  "$MOONLIGHT_SCRIPT" setup || warn "Environment setup skipped. Run: moonlight setup"
+  echo -e "Restart your shell, or run: ${BOLD}hash -r && export PATH=\"$LOCAL_BIN:\$PATH\"${RESET}"
+}
 
-  hash -r 2>/dev/null || true
-  exec "$SHELL" -l
+main() {
+  echo -e "${BOLD}Moonlight CLI Installer${RESET}"
+  echo "------------------------------------------------"
+
+  if brew_has_moonlight; then
+    upgrade_via_brew
+    done_log "Done."
+    exit 0
+  fi
+
+  if command -v moonlight >/dev/null 2>&1; then
+    log "Moonlight is already installed."
+    log "Running 'moonlight update'..."
+    echo "------------------------------------------------"
+    moonlight update
+    exit 0
+  fi
+
+  if command -v brew >/dev/null 2>&1; then
+    install_via_brew
+    done_log "Done. Homebrew put moonlight on your PATH."
+    exit 0
+  fi
+
+  warn "Homebrew not found. Installing to ~/.local/bin instead."
+  echo "  Standard install: brew tap $TAP $TAP_URL && brew trust --formula $FORMULA && brew install --formula $FORMULA"
+  echo "------------------------------------------------"
+  install_via_curl
+  done_log "Installation complete."
 }
 
 main
