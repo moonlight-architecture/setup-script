@@ -3,23 +3,18 @@
 # Named moonlight-cli because homebrew/cask already ships "moonlight"
 # (the game-streaming app). The installed command is still `moonlight`.
 #
-# brew tap clones git. Commit Formula/ before tapping a local path.
-#
-#   brew tap moonlight-architecture/moonlight /path/to/setup-script
+#   brew tap moonlight-architecture/moonlight https://github.com/moonlight-architecture/setup-script
 #   brew trust --formula moonlight-architecture/moonlight/moonlight-cli
 #   brew install --formula moonlight-architecture/moonlight/moonlight-cli
 
 class MoonlightCli < Formula
   desc "CLI to create and run Moonlight Spring Boot apps"
   homepage "https://github.com/moonlight-architecture/setup-script"
+  url "https://github.com/moonlight-architecture/setup-script/archive/refs/tags/v0.0.3.tar.gz"
+  sha256 :no_check
   license "MIT"
-  version "0.0.2"
-
-  # The tap *is* this repo. Install from that checkout so a local tap works
-  # before anything is pushed to GitHub.
-  url "file://#{Tap.fetch("moonlight-architecture/moonlight").path}",
-      using: :git,
-      tag:   "v0.0.2"
+  version "0.0.3"
+  head "https://github.com/moonlight-architecture/setup-script.git", branch: "main"
 
   depends_on "git"
   depends_on "openjdk@25"
@@ -40,7 +35,7 @@ class MoonlightCli < Formula
 
       Java 25 comes from keg-only openjdk@25; this CLI finds it automatically.
 
-      Upgrade:    brew upgrade moonlight-architecture/moonlight/moonlight-cli
+      Upgrade:    brew upgrade moonlight-cli
       Uninstall:  brew uninstall moonlight-cli
     EOS
   end

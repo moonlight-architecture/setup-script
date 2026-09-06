@@ -2,11 +2,11 @@
 set -Eeuo pipefail
 
 #######################################
-# Moonlight CLI v0.0.2
+# Moonlight CLI v0.0.3
 # moonlight-architecture/setup-script
 #######################################
 
-VERSION="0.0.2"
+VERSION="0.0.3"
 TEMPLATE_URL="https://github.com/moonlight-architecture/java-starter-kit.git"
 RAW_SCRIPT_URL="https://raw.githubusercontent.com/moonlight-architecture/setup-script/main/moonlight.sh"
 BASE_GROUP_PATH="com/servicecops"
@@ -38,8 +38,26 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed."
 }
 
+os_family() {
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) echo macos ;;
+    Linux)  echo linux ;;
+    MINGW*|MSYS*|CYGWIN*) echo windows ;;
+    *)
+      if [[ -n "${WINDIR:-}" || "${OS:-}" == "Windows_NT" ]]; then
+        echo windows
+      else
+        echo unknown
+      fi
+      ;;
+  esac
+}
+
+is_windows() { [[ "$(os_family)" == windows ]]; }
+is_macos()   { [[ "$(os_family)" == macos ]]; }
+
 detect_sed() {
-  if [[ "${OSTYPE:-}" == "darwin"* ]]; then
+  if is_macos; then
     SED_INPLACE=(-i '')
   else
     SED_INPLACE=(-i)
@@ -56,9 +74,82 @@ safe_sed() {
 detect_profile() {
   if [[ "${SHELL:-}" == *zsh* ]]; then
     echo "$HOME/.zshrc"
+  elif [[ -f "$HOME/.bash_profile" ]] && is_windows; then
+    echo "$HOME/.bash_profile"
   else
     echo "$HOME/.bashrc"
   fi
+}
+
+java_executable() {
+  local home="$1"
+  if [[ -n "$home" && -x "$home/bin/java" ]]; then
+    echo "$home/bin/java"
+    return 0
+  fi
+  if [[ -n "$home" && -x "$home/bin/java.exe" ]]; then
+    echo "$home/bin/java.exe"
+    return 0
+  fi
+  return 1
+}
+
+launch_intellij() {
+  local project="$1"
+  [[ -d "$project" ]] || die "Project directory not found: $project"
+  log "Opening IntelliJ IDEA at $project"
+
+  if command -v idea >/dev/null 2>&1; then
+    idea "$project"
+    return 0
+  fi
+  if command -v idea64 >/dev/null 2>&1; then
+    idea64 "$project"
+    return 0
+  fi
+  if is_macos; then
+    open -na "IntelliJ IDEA.app" --args "$project" \
+      || open -a "IntelliJ IDEA" "$project" \
+      || warn "IntelliJ IDEA was not found."
+    return 0
+  fi
+  if is_windows; then
+    local idea_exe
+    idea_exe="$(ls /c/Program\ Files/JetBrains/*/bin/idea64.exe 2>/dev/null | head -n 1 || true)"
+    if [[ -n "$idea_exe" ]]; then
+      "$idea_exe" "$project"
+      return 0
+    fi
+  fi
+  warn "Could not find IntelliJ IDEA. Open this folder from the IDE: $project"
+}
+
+launch_vscode() {
+  local project="$1"
+  [[ -d "$project" ]] || die "Project directory not found: $project"
+  log "Opening VS Code at $project"
+  if command -v code >/dev/null 2>&1; then
+    code "$project"
+  else
+    warn "Could not find the 'code' command on PATH. Open this folder from VS Code: $project"
+  fi
+}
+
+write_windows_launcher() {
+  local dest="$1"
+  mkdir -p "$(dirname "$dest")"
+  cat > "$dest" <<'EOF'
+@echo off
+setlocal
+set "SCRIPT=%USERPROFILE%\.moonlight\moonlight.sh"
+where bash >nul 2>&1 && bash "%SCRIPT%" %* && exit /b %ERRORLEVEL%
+if exist "%ProgramFiles%\Git\bin\bash.exe" (
+  "%ProgramFiles%\Git\bin\bash.exe" "%SCRIPT%" %*
+  exit /b %ERRORLEVEL%
+)
+echo Moonlight requires Git Bash. Install Git for Windows: https://git-scm.com/download/win
+exit /b 1
+EOF
 }
 
 script_path() {
@@ -182,7 +273,7 @@ set_prop() {
 
 has_placeholder() {
   local value="${1:-}"
-  [[ "$value" == *"{"* && "$value" == *"}"* ]]
+  [[ "$value" == *"{database_name}"* || "$value" == *"{username}"* || "$value" == *"{password}"* ]]
 }
 
 #######################################
@@ -202,10 +293,17 @@ java_major_ok() {
   [[ -n "${major:-}" && "$major" -ge "$REQUIRED_JAVA_MAJOR" ]]
 }
 
+java_home_ok() {
+  local home="$1"
+  local bin
+  bin="$(java_executable "$home" || true)"
+  [[ -n "$bin" ]] && java_major_ok "$bin"
+}
+
 java_home_from_bin() {
   local bin="$1"
   local resolved
-  if [[ -x /usr/libexec/java_home ]]; then
+  if is_macos && [[ -x /usr/libexec/java_home ]]; then
     /usr/libexec/java_home 2>/dev/null && return 0
   fi
   if command -v realpath >/dev/null 2>&1; then
@@ -219,10 +317,11 @@ java_home_from_bin() {
 }
 
 adoptium_os_arch() {
-  case "$(uname -s)" in
-    Darwin) echo -n "mac" ;;
-    Linux)  echo -n "linux" ;;
-    *)      die "Unsupported OS: $(uname -s). Install Java ${REQUIRED_JAVA_MAJOR}+ manually." ;;
+  case "$(os_family)" in
+    macos)   echo -n "mac" ;;
+    linux)   echo -n "linux" ;;
+    windows) echo -n "windows" ;;
+    *)       die "Unsupported OS. Install Java ${REQUIRED_JAVA_MAJOR}+ and re-run moonlight setup." ;;
   esac
   echo -n "/"
   case "$(uname -m)" in
@@ -235,7 +334,7 @@ adoptium_os_arch() {
 find_java_home() {
   local candidate java_bin brew_prefix formula
 
-  if [[ -n "${JAVA_HOME:-}" && -x "${JAVA_HOME}/bin/java" ]] && java_major_ok "${JAVA_HOME}/bin/java"; then
+  if [[ -n "${JAVA_HOME:-}" ]] && java_home_ok "$JAVA_HOME"; then
     echo "$JAVA_HOME"
     return 0
   fi
@@ -244,21 +343,21 @@ find_java_home() {
     brew_prefix="$(brew --prefix 2>/dev/null || true)"
     for formula in "openjdk@${REQUIRED_JAVA_MAJOR}" "temurin@${REQUIRED_JAVA_MAJOR}" openjdk; do
       candidate="${brew_prefix}/opt/${formula}/libexec/openjdk.jdk/Contents/Home"
-      if [[ -x "$candidate/bin/java" ]] && java_major_ok "$candidate/bin/java"; then
+      if java_home_ok "$candidate"; then
         echo "$candidate"
         return 0
       fi
       candidate="${brew_prefix}/opt/${formula}"
-      if [[ -x "$candidate/bin/java" ]] && java_major_ok "$candidate/bin/java"; then
+      if java_home_ok "$candidate"; then
         echo "$candidate"
         return 0
       fi
     done
   fi
 
-  if [[ -x /usr/libexec/java_home ]]; then
+  if is_macos && [[ -x /usr/libexec/java_home ]]; then
     candidate="$(/usr/libexec/java_home -v "$REQUIRED_JAVA_MAJOR" 2>/dev/null || true)"
-    if [[ -n "$candidate" && -x "$candidate/bin/java" ]] && java_major_ok "$candidate/bin/java"; then
+    if java_home_ok "$candidate"; then
       echo "$candidate"
       return 0
     fi
@@ -272,15 +371,37 @@ find_java_home() {
     fi
   fi
 
-  if [[ -x "$MOONLIGHT_HOME/jdk/current/bin/java" ]] && java_major_ok "$MOONLIGHT_HOME/jdk/current/bin/java"; then
+  if java_home_ok "$MOONLIGHT_HOME/jdk/current"; then
     echo "$MOONLIGHT_HOME/jdk/current"
     return 0
+  fi
+  if [[ -f "$MOONLIGHT_HOME/jdk/current.path" ]]; then
+    candidate="$(tr -d '\r' < "$MOONLIGHT_HOME/jdk/current.path")"
+    if java_home_ok "$candidate"; then
+      echo "$candidate"
+      return 0
+    fi
+  fi
+
+  if is_windows; then
+    for candidate in \
+      /c/Program\ Files/Eclipse\ Adoptium/jdk-"${REQUIRED_JAVA_MAJOR}"* \
+      /c/Program\ Files/Java/jdk-"${REQUIRED_JAVA_MAJOR}"* \
+      /c/Program\ Files/Microsoft/jdk-"${REQUIRED_JAVA_MAJOR}"* \
+      "$HOME/scoop/apps/temurin${REQUIRED_JAVA_MAJOR}-jdk/current" \
+      "$HOME/scoop/apps/openjdk/current"
+    do
+      if java_home_ok "$candidate"; then
+        echo "$candidate"
+        return 0
+      fi
+    done
   fi
 
   for candidate in /usr/lib/jvm/java-"${REQUIRED_JAVA_MAJOR}"-openjdk* \
                    /usr/lib/jvm/java-"${REQUIRED_JAVA_MAJOR}"-temurin* \
                    /usr/lib/jvm/temurin-"${REQUIRED_JAVA_MAJOR}"*; do
-    if [[ -x "$candidate/bin/java" ]] && java_major_ok "$candidate/bin/java"; then
+    if java_home_ok "$candidate"; then
       echo "$candidate"
       return 0
     fi
@@ -308,8 +429,22 @@ EOF
 
 activate_java() {
   local home="$1"
+  local bin
   export JAVA_HOME="$home"
   export PATH="$JAVA_HOME/bin:$PATH"
+  bin="$(java_executable "$home" || true)"
+  [[ -n "$bin" ]] || return 0
+}
+
+link_jdk_current() {
+  local home="$1"
+  mkdir -p "$MOONLIGHT_HOME/jdk"
+  rm -rf "$MOONLIGHT_HOME/jdk/current"
+  if ln -sfn "$home" "$MOONLIGHT_HOME/jdk/current" 2>/dev/null; then
+    return 0
+  fi
+  # Git Bash on Windows may not allow symlinks without Developer Mode.
+  printf '%s\n' "$home" > "$MOONLIGHT_HOME/jdk/current.path"
 }
 
 install_java_via_brew() {
@@ -323,8 +458,30 @@ install_java_via_brew() {
   return 0
 }
 
+install_java_via_windows_pkg() {
+  local home
+  is_windows || return 1
+  if command -v winget >/dev/null 2>&1; then
+    log "Installing Eclipse Temurin ${REQUIRED_JAVA_MAJOR} with winget..."
+    winget install --id "EclipseAdoptium.Temurin.${REQUIRED_JAVA_MAJOR}.JDK" -e \
+      --accept-package-agreements --accept-source-agreements || return 1
+  elif command -v scoop >/dev/null 2>&1; then
+    log "Installing Temurin ${REQUIRED_JAVA_MAJOR} with Scoop..."
+    scoop install "temurin${REQUIRED_JAVA_MAJOR}-jdk" || return 1
+  elif command -v choco >/dev/null 2>&1; then
+    log "Installing Temurin ${REQUIRED_JAVA_MAJOR} with Chocolatey..."
+    choco install "temurin${REQUIRED_JAVA_MAJOR}" -y || return 1
+  else
+    return 1
+  fi
+  home="$(find_java_home)" || return 1
+  activate_java "$home"
+  done_log "Java ${REQUIRED_JAVA_MAJOR} available ($home)"
+  return 0
+}
+
 install_java() {
-  local os_arch os arch url tmp work extracted home
+  local os_arch os arch url tmp work extracted home java_bin
 
   if install_java_via_brew; then
     return 0
@@ -332,10 +489,11 @@ install_java() {
   if command -v brew >/dev/null 2>&1; then
     warn "Homebrew Java install did not succeed. Falling back to Temurin..."
   fi
+  if install_java_via_windows_pkg; then
+    return 0
+  fi
 
   require_cmd curl
-  require_cmd tar
-
   os_arch="$(adoptium_os_arch)"
   os="${os_arch%/*}"
   arch="${os_arch#*/}"
@@ -349,9 +507,15 @@ install_java() {
   curl -fSL --progress-bar "$url" -o "$tmp" || die "Failed to download Java ${REQUIRED_JAVA_MAJOR}."
 
   mkdir -p "$MOONLIGHT_HOME/jdk"
-  tar -xf "$tmp" -C "$work"
-
-  extracted="$(find "$work" -type f -path '*/bin/java' | head -n 1 || true)"
+  if is_windows; then
+    require_cmd unzip
+    unzip -q "$tmp" -d "$work"
+    extracted="$(find "$work" -type f \( -path '*/bin/java' -o -path '*/bin/java.exe' \) | head -n 1 || true)"
+  else
+    require_cmd tar
+    tar -xf "$tmp" -C "$work"
+    extracted="$(find "$work" -type f -path '*/bin/java' | head -n 1 || true)"
+  fi
   [[ -n "$extracted" ]] || die "Downloaded Java archive did not contain a JDK."
   extracted="$(cd "$(dirname "$extracted")/.." && pwd)"
 
@@ -359,22 +523,26 @@ install_java() {
   rm -rf "$home"
   mkdir -p "$MOONLIGHT_HOME/jdk"
   mv "$extracted" "$home"
-  ln -sfn "$home" "$MOONLIGHT_HOME/jdk/current"
+  link_jdk_current "$home"
 
-  if [[ "${OSTYPE:-}" == "darwin"* ]]; then
-    xattr -dr com.apple.quarantine "$MOONLIGHT_HOME/jdk/current" 2>/dev/null || true
+  if is_macos; then
+    xattr -dr com.apple.quarantine "$home" 2>/dev/null || true
   fi
 
-  [[ -x "$MOONLIGHT_HOME/jdk/current/bin/java" ]] || die "Java install failed."
-  persist_java_home "$MOONLIGHT_HOME/jdk/current"
-  done_log "Java ${REQUIRED_JAVA_MAJOR} installed at $MOONLIGHT_HOME/jdk/current"
+  java_home_ok "$home" || die "Java install failed."
+  persist_java_home "$home"
+  if is_windows; then
+    write_windows_launcher "$HOME/.local/bin/moonlight.cmd"
+  fi
+  done_log "Java ${REQUIRED_JAVA_MAJOR} installed at $home"
 }
 
 ensure_java() {
-  local home
+  local home bin
   if home="$(find_java_home)"; then
     activate_java "$home"
-    log "Using Java $(java_major "$JAVA_HOME/bin/java") ($JAVA_HOME)"
+    bin="$(java_executable "$JAVA_HOME")"
+    log "Using Java $(java_major "$bin") ($JAVA_HOME)"
     return 0
   fi
 
@@ -382,17 +550,23 @@ ensure_java() {
   install_java
   home="$(find_java_home)" || die "Java ${REQUIRED_JAVA_MAJOR} is still missing after install."
   activate_java "$home"
-  log "Using Java $(java_major "$JAVA_HOME/bin/java") ($JAVA_HOME)"
+  bin="$(java_executable "$JAVA_HOME")"
+  log "Using Java $(java_major "$bin") ($JAVA_HOME)"
 }
 
 cmd_setup() {
   require_cmd curl
   require_cmd git
   ensure_java
+  if is_windows; then
+    write_windows_launcher "$HOME/.local/bin/moonlight.cmd"
+  fi
   if command -v psql >/dev/null 2>&1; then
     done_log "PostgreSQL client found."
   elif command -v brew >/dev/null 2>&1; then
     warn "psql not found. Install a client with: brew install libpq && brew link --force libpq"
+  elif is_windows; then
+    warn "psql not found. Install PostgreSQL, or add its bin directory to PATH."
   else
     warn "psql not found. Install PostgreSQL to create databases from the CLI."
   fi
@@ -435,9 +609,19 @@ write_db_props() {
   local name="$2"
   local user="$3"
   local pass="$4"
-  set_prop "$file" "spring.datasource.url" "jdbc:postgresql://localhost:5432/${name}"
+  local url="jdbc:postgresql://localhost:5432/${name}"
+  local shared="src/main/resources/application.properties"
+  set_prop "$file" "spring.datasource.url" "$url"
   set_prop "$file" "spring.datasource.username" "$user"
   set_prop "$file" "spring.datasource.password" "$pass"
+  set_prop "$file" "spring.datasource.driver-class-name" "org.postgresql.Driver"
+  # Spring Boot 4 can bind DataSource before profile files load. Keep defaults here too.
+  if [[ -f "$shared" && "$file" != "$shared" ]]; then
+    set_prop "$shared" "spring.datasource.url" "$url"
+    set_prop "$shared" "spring.datasource.username" "$user"
+    set_prop "$shared" "spring.datasource.password" "$pass"
+    set_prop "$shared" "spring.datasource.driver-class-name" "org.postgresql.Driver"
+  fi
 }
 
 jdbc_host() {
@@ -679,22 +863,10 @@ cmd_new() {
 
   case "${IDE_CHOICE:-4}" in
     1)
-      log "Launching IntelliJ IDEA..."
-      if command -v idea &>/dev/null; then
-        idea .
-      elif [[ "${OSTYPE:-}" == "darwin"* ]]; then
-        open -a "IntelliJ IDEA" . || warn "IntelliJ IDEA not found in Applications."
-      else
-        warn "Could not find 'idea' command in PATH."
-      fi
+      launch_intellij "$(pwd -P)"
       ;;
     2)
-      log "Launching VS Code..."
-      if command -v code &>/dev/null; then
-        code .
-      else
-        warn "Could not find 'code' command in PATH."
-      fi
+      launch_vscode "$(pwd -P)"
       ;;
     3)
       cmd_run "dev"
@@ -774,8 +946,9 @@ cmd_uninstall() {
   log "Removing Moonlight files..."
 
   if [[ -L "$HOME/.local/bin/moonlight" ]] || [[ -f "$HOME/.local/bin/moonlight" ]]; then
-    rm "$HOME/.local/bin/moonlight"
+    rm -f "$HOME/.local/bin/moonlight"
   fi
+  rm -f "$HOME/.local/bin/moonlight.cmd"
 
   rm -rf "$MOONLIGHT_HOME"
 

@@ -1,20 +1,20 @@
-# Moonlight setup script
+# Moonlight CLI
 
-CLI for installing Moonlight, provisioning Java 25, and creating or running Java projects from the starter kit.
+Command-line toolkit for installing Moonlight, provisioning Java 25, and creating or running Spring Boot projects from the starter kit.
 
-**Remote:** https://github.com/moonlight-architecture/setup-script
-
-| Repo | Role |
-|------|------|
+| Repository | Role |
+|------------|------|
 | [java-sdk](https://github.com/moonlight-architecture/java-sdk) | Spring Boot dispatch library (`com.jet.moonlight:jet`) |
-| [java-starter-kit](https://github.com/moonlight-architecture/java-starter-kit) | App template cloned by `moonlight new` |
-| [setup-script](https://github.com/moonlight-architecture/setup-script) | This CLI (`install.sh`, `moonlight.sh`, Homebrew formula) |
+| [java-starter-kit](https://github.com/moonlight-architecture/java-starter-kit) | Application template used by `moonlight new` |
+| [setup-script](https://github.com/moonlight-architecture/setup-script) | This CLI |
+
+**Supported platforms:** macOS, Linux, and Windows (Git Bash or WSL).
 
 ## Install
 
-Homebrew is the standard path (macOS and Linuxbrew). The formula is **`moonlight-cli`** — Homebrew already has a `moonlight` cask (game streaming). The command you run is still `moonlight`.
+### macOS and Linux (Homebrew)
 
-Homebrew 6+ ignores untrusted taps, so trust the formula before installing:
+The formula is `moonlight-cli`. Homebrew already publishes a `moonlight` cask for the [game streaming client](https://moonlight-stream.org/); do not install that by mistake.
 
 ```bash
 brew tap moonlight-architecture/moonlight https://github.com/moonlight-architecture/setup-script
@@ -22,66 +22,57 @@ brew trust --formula moonlight-architecture/moonlight/moonlight-cli
 brew install --formula moonlight-architecture/moonlight/moonlight-cli
 ```
 
-That installs `moonlight` into the Homebrew prefix and pulls in `openjdk@25`.
-
 ```bash
 brew upgrade moonlight-cli
 brew uninstall moonlight-cli
 ```
 
-Do **not** run `brew install moonlight` — that installs the [Moonlight streaming app](https://moonlight-stream.org/) cask.
-
-If you already did that:
+If `brew install moonlight` already installed the streaming app:
 
 ```bash
 brew uninstall --cask moonlight
 ```
 
-Without Homebrew:
+### Windows
+
+Install [Git for Windows](https://git-scm.com/download/win), then in **Git Bash**:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/moonlight-architecture/setup-script/main/install.sh | bash
 ```
 
-`install.sh` uses Homebrew when `brew` is on `PATH`, and otherwise writes `~/.moonlight/moonlight.sh` plus a `~/.local/bin/moonlight` symlink.
+The installer writes `~/.moonlight/moonlight.sh`, a `moonlight` command for Git Bash, and `moonlight.cmd` for Command Prompt and PowerShell. Add `%USERPROFILE%\.local\bin` to your user PATH if `moonlight` is not found outside Git Bash.
 
-### Local tap (development)
+WSL follows the Linux instructions (Homebrew optional).
 
-`brew tap … /path/to/setup-script` **clones git**. Uncommitted files (including `Formula/`) are invisible to Homebrew. Commit first, then tap:
+### Any Unix shell (no Homebrew)
 
 ```bash
-git add Formula LICENSE README.md install.sh moonlight.sh
-git commit -m "Add Homebrew moonlight-cli formula"
-
-brew untap moonlight-architecture/moonlight
-brew tap moonlight-architecture/moonlight /path/to/setup-script
-brew trust --formula moonlight-architecture/moonlight/moonlight-cli
-brew install --formula moonlight-architecture/moonlight/moonlight-cli
+curl -fsSL https://raw.githubusercontent.com/moonlight-architecture/setup-script/main/install.sh | bash
 ```
+
+`moonlight setup` installs Java 25 when it is missing: Homebrew `openjdk@25` on macOS/Linux, winget/Scoop/Chocolatey on Windows when available, otherwise Eclipse Temurin.
 
 ## Commands
 
 ```bash
-moonlight setup              # detect / install Java 25+
-moonlight new <name> [tag]   # clone java-starter-kit (latest tag, or main)
-moonlight run [env]          # from an app root: ensure DB, then start Spring Boot
+moonlight setup              # detect and install Java 25+
+moonlight new <name> [tag]   # create a project from java-starter-kit
+moonlight run [env]          # from an app root: ensure the database, then start the server
 moonlight dev | uat | prod   # same as run with that profile
-moonlight check              # print latest template tag
-moonlight update             # brew upgrade moonlight-cli, or refresh a curl install
+moonlight check              # print the latest template tag
+moonlight update             # brew upgrade, or refresh a curl install
 moonlight version
-moonlight uninstall          # brew uninstall moonlight-cli, or remove a curl install
+moonlight uninstall
 ```
 
-With no arguments, `moonlight` starts the app when the current directory is a Moonlight project root. The profile defaults to `spring.profiles.active` in `application.properties` (usually `dev`).
+With no arguments, `moonlight` starts the application when the current directory is a Moonlight project root. The profile defaults to `spring.profiles.active` (usually `dev`).
 
-Creating a database does not stop the script — after `CREATE DATABASE` it continues and runs the server.
-
-Examples:
+Creating a database does not stop the script. After `CREATE DATABASE` it continues and starts the server.
 
 ```bash
 moonlight new billing-service
 cd billing-service
 moonlight run
 moonlight run uat
-moonlight prod
 ```

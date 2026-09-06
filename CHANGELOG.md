@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.3 — 2026-09-07
+
+- Windows support (Git Bash, WSL, and `moonlight.cmd` for Command Prompt / PowerShell)
+- Java 25 via winget, Scoop, or Chocolatey when Homebrew is not available
+- Open IntelliJ and VS Code with an absolute project path so the IDE does not land in `/tmp`
+- Write datasource settings into `application.properties` as well as the active profile file
+
 ## v0.0.2 — 2026-09-06
 
 - Detect and install Java 25+ (`moonlight setup`); prefer Homebrew `openjdk@25`

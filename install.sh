@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 #######################################
 # Moonlight CLI Installer
-# Prefers Homebrew; falls back to ~/.local/bin
+# macOS, Linux, and Windows (Git Bash / WSL)
 # moonlight-architecture/setup-script
 #######################################
 
@@ -26,14 +26,43 @@ done_log() { echo -e "${GREEN}✅${RESET} ${BOLD}$*${RESET}"; }
 warn() { echo -e "${YELLOW}⚠️  $*${RESET}"; }
 die()  { echo -e "❌ $*" >&2; exit 1; }
 
+is_windows() {
+  case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) return 0 ;;
+  esac
+  [[ -n "${WINDIR:-}" || "${OS:-}" == "Windows_NT" ]]
+}
+
 check_dependencies() {
   for cmd in curl git; do
-    command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required."
+    command -v "$cmd" >/dev/null 2>&1 || die "$cmd is required. On Windows, install Git for Windows (includes Git Bash and curl)."
   done
 }
 
 detect_profile() {
-  [[ "${SHELL:-}" == *zsh* ]] && echo "$HOME/.zshrc" || echo "$HOME/.bashrc"
+  if [[ "${SHELL:-}" == *zsh* ]]; then
+    echo "$HOME/.zshrc"
+  elif is_windows && [[ -f "$HOME/.bash_profile" ]]; then
+    echo "$HOME/.bash_profile"
+  else
+    echo "$HOME/.bashrc"
+  fi
+}
+
+write_windows_launcher() {
+  mkdir -p "$LOCAL_BIN"
+  cat > "$LOCAL_BIN/moonlight.cmd" <<'EOF'
+@echo off
+setlocal
+set "SCRIPT=%USERPROFILE%\.moonlight\moonlight.sh"
+where bash >nul 2>&1 && bash "%SCRIPT%" %* && exit /b %ERRORLEVEL%
+if exist "%ProgramFiles%\Git\bin\bash.exe" (
+  "%ProgramFiles%\Git\bin\bash.exe" "%SCRIPT%" %*
+  exit /b %ERRORLEVEL%
+)
+echo Moonlight requires Git Bash. Install Git for Windows: https://git-scm.com/download/win
+exit /b 1
+EOF
 }
 
 brew_has_moonlight() {
@@ -63,7 +92,7 @@ upgrade_via_brew() {
 install_via_curl() {
   check_dependencies
 
-  mkdir -p "$MOONLIGHT_HOME"
+  mkdir -p "$MOONLIGHT_HOME" "$LOCAL_BIN"
   local tmp_file
   tmp_file="$(mktemp)"
 
@@ -72,10 +101,15 @@ install_via_curl() {
   chmod +x "$tmp_file"
   mv "$tmp_file" "$MOONLIGHT_SCRIPT"
 
-  mkdir -p "$LOCAL_BIN"
   rm -f "$LOCAL_BIN/moonlight"
-  ln -s "$MOONLIGHT_SCRIPT" "$LOCAL_BIN/moonlight"
-  done_log "Symlinked to $LOCAL_BIN/moonlight"
+  ln -s "$MOONLIGHT_SCRIPT" "$LOCAL_BIN/moonlight" 2>/dev/null \
+    || cp "$MOONLIGHT_SCRIPT" "$LOCAL_BIN/moonlight"
+  done_log "Installed $LOCAL_BIN/moonlight"
+
+  if is_windows; then
+    write_windows_launcher
+    done_log "Wrote $LOCAL_BIN/moonlight.cmd for Command Prompt and PowerShell"
+  fi
 
   local profile
   profile="$(detect_profile)"
@@ -86,7 +120,10 @@ install_via_curl() {
   fi
 
   "$MOONLIGHT_SCRIPT" setup || warn "Environment setup skipped. Run: moonlight setup"
-  echo -e "Restart your shell, or run: ${BOLD}hash -r && export PATH=\"$LOCAL_BIN:\$PATH\"${RESET}"
+  echo -e "Restart your shell, or run: ${BOLD}export PATH=\"$LOCAL_BIN:\$PATH\"${RESET}"
+  if is_windows; then
+    echo -e "In Command Prompt or PowerShell, add ${BOLD}%USERPROFILE%\\.local\\bin${RESET} to your user PATH."
+  fi
 }
 
 main() {
@@ -107,14 +144,17 @@ main() {
     exit 0
   fi
 
-  if command -v brew >/dev/null 2>&1; then
+  if ! is_windows && command -v brew >/dev/null 2>&1; then
     install_via_brew
     done_log "Done. Homebrew put moonlight on your PATH."
     exit 0
   fi
 
-  warn "Homebrew not found. Installing to ~/.local/bin instead."
-  echo "  Standard install: brew tap $TAP $TAP_URL && brew trust --formula $FORMULA && brew install --formula $FORMULA"
+  if is_windows; then
+    log "Installing with Git Bash..."
+  else
+    warn "Homebrew not found. Installing to ~/.local/bin."
+  fi
   echo "------------------------------------------------"
   install_via_curl
   done_log "Installation complete."
