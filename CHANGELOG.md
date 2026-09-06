@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Homebrew formula uses the SHA-256 of the v0.0.3 tarball. `sha256 :no_check` is rejected by current Homebrew.
+- The installer refreshes the tap before `brew install`, and falls back to curl if Homebrew still fails.
 
 ## v0.0.3 — 2026-09-07
 

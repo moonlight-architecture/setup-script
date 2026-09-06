@@ -71,13 +71,29 @@ brew_has_moonlight() {
     || brew list --formula "$FORMULA" >/dev/null 2>&1
 }
 
+refresh_moonlight_tap() {
+  brew tap "$TAP" "$TAP_URL"
+  local tap_dir
+  tap_dir="$(brew --repo "$TAP" 2>/dev/null || true)"
+  [[ -n "$tap_dir" && -d "$tap_dir/.git" ]] || return 1
+  log "Refreshing tap $TAP..."
+  git -C "$tap_dir" remote set-url origin "$TAP_URL"
+  git -C "$tap_dir" fetch --force origin
+  git -C "$tap_dir" checkout -f main
+  git -C "$tap_dir" reset --hard origin/main
+}
+
 install_via_brew() {
   log "Installing via Homebrew..."
-  brew tap "$TAP" "$TAP_URL"
+  refresh_moonlight_tap || warn "Could not refresh the Homebrew tap."
   brew trust --formula "$FORMULA" || true
-  brew install --formula "$FORMULA"
-  done_log "Installed $(command -v moonlight)"
-  moonlight setup || warn "Environment setup skipped. Run: moonlight setup"
+  if brew install --formula "$FORMULA"; then
+    done_log "Installed $(command -v moonlight)"
+    moonlight setup || warn "Environment setup skipped. Run: moonlight setup"
+    return 0
+  fi
+  warn "Homebrew install failed. Installing with curl instead."
+  install_via_curl
 }
 
 upgrade_via_brew() {
